@@ -1,4 +1,4 @@
-FROM --platform=$BUILDPLATFORM golang:1.25-bookworm AS oscar-cli-builder
+FROM golang:1.25-bookworm AS oscar-cli-builder
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
@@ -7,7 +7,7 @@ ARG OSCAR_CLI_VERSION=v1.13.0
 
 RUN GOBIN=/tmp/bin go install github.com/grycap/oscar-cli@${OSCAR_CLI_VERSION}
 
-FROM --platform=$BUILDPLATFORM node:22-bookworm-slim
+FROM node:22-bookworm-slim
 
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
