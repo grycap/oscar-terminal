@@ -17,7 +17,7 @@ functions:
           OSCAR_CLUSTER_ENDPOINT: http://oscar.oscar.svc.cluster.local:8080
           OSCAR_CLUSTER_SSL_VERIFY: "false"
         secrets:
-          OSCAR_OIDC_REFRESH_TOKEN: change-me
+          OSCAR_OIDC_REFRESH_TOKEN: ""
       mount:
         storage_provider: minio.default
         path: /ghostty-web
@@ -26,6 +26,7 @@ functions:
         max_scale: 1
         api_port: [8080]
         cpu_threshold: 90
-        set_auth: false
+        set_auth: true
+        auth_type: forward
         rewrite_target: true
         health_path: /healthz
