@@ -2,7 +2,7 @@
 
 This crate deploys an OSCAR exposed service that provides a browser-based terminal powered by `ghostty-web`. The terminal runs inside the service container and includes `oscar-cli`, `tmux`, and a standard Bash shell.
 
-The service is intended to be deployed per user. By default, the launcher reads the OSCAR service access token from the mounted service FDL and reuses it as the terminal access token, so the browser login token matches the service token managed by OSCAR.
+The service is intended to be deployed per user. OSCAR protects the exposed HTTP route with ForwardAuth, which accepts either OIDC authentication or the OSCAR service token; the terminal does not implement a second login or validate that token itself. Deploy only on clusters configured with an authenticated HTTPRoute (Traefik) and keep the terminal's internal Kubernetes Service inaccessible to untrusted workloads, because direct in-cluster access bypasses the gateway.
 
 The container can also preconfigure `oscar-cli` against the in-cluster OSCAR API by injecting an OIDC refresh token as a secret.
 
@@ -37,9 +37,9 @@ Base deployment:
 oscar-cli apply fdl.yml
 ```
 
-Before deploying, replace the placeholder secrets in `fdl.yml`:
+The FDL declares `environment.secrets.OSCAR_OIDC_REFRESH_TOKEN` with an empty value. If you need `oscar-cli` inside the container, provide a real refresh token via a private dotenv file (`OSCAR_OIDC_REFRESH_TOKEN=<value>`) and deploy with `oscar-cli apply fdl.yml --env-file <private-env-file>`; the CLI fills the declared secret without modifying the tracked FDL. Keep the file outside the repository with restrictive permissions, and never commit the token. Leave it empty to run the terminal without preconfigured CLI credentials. When updating an existing service, providing an empty value may replace its previously configured secret. Anyone who obtains shell access can read that credential; it is not needed for browser login.
 
-- `OSCAR_OIDC_REFRESH_TOKEN`: OIDC refresh token used by `oscar-cli`
+`expose.auth_type: forward` requires OSCAR's Gateway API HTTPRoute mode. The example cannot be deployed as-is on a cluster using only the legacy Ingress routing mode.
 
 Persistent workspace:
 
@@ -49,13 +49,21 @@ Persistent workspace:
 
 ## Access the terminal
 
-After deployment, access the service through:
+Sign in to the OSCAR Dashboard with OIDC and open the deployed terminal from the **Terminals** view. The Dashboard bootstraps an OSCAR authentication cookie before redirecting to the terminal; OSCAR checks permissions for this specific service on each gateway request. In DNS/subdomain mode its address is:
 
 ```text
-https://<OSCAR-ENDPOINT>/system/services/<service-name>/exposed/?token=<service-token>
+https://<service-name>.<OSCAR-INGRESS-HOST>/
 ```
 
-On first access, the server validates the token, issues an `HttpOnly` session cookie, and redirects the browser to the same URL without the `token` query parameter. The WebSocket terminal then reuses that cookie.
+Opening the URL directly without an existing OSCAR service-auth cookie does not start OIDC login: the gateway denies access. After Dashboard bootstrap, the gateway authorizes both the page and the WebSocket upgrade.
+
+Alternatively, supply the **OSCAR service token** in the initial URL (DNS/subdomain mode):
+
+```text
+https://<service-name>.<OSCAR-INGRESS-HOST>/?token=<oscar-service-token>
+```
+
+OSCAR's ForwardAuth validates this token and issues a service-auth cookie. Subsequent requests to the URL **without** the query string, including static assets and the terminal WebSocket, work with that cookie. The terminal application does not inspect the token. This is distinct from `OSCAR_OIDC_REFRESH_TOKEN`, which only configures `oscar-cli` inside the container. A service token grants access by possession rather than tying it to an OIDC user: do not share it when user-specific identity is required. Prefer the Dashboard/OIDC flow where possible, since tokens in URLs can leak through browser history, access logs, and copied links; navigate to the clean URL after the initial request.
 
 When `OSCAR_OIDC_REFRESH_TOKEN` is set, the startup script generates `~/.oscar-cli/config.yaml` with a default cluster that points to the in-cluster OSCAR service endpoint:
 
@@ -73,8 +81,6 @@ default: local-cluster
 - This crate assumes one deployed instance per user.
 - The service is stateful from the user's point of view if a bucket is mounted, even though the exposed service itself runs as a single pod.
 - If your OSCAR cluster expects `port` instead of `api_port` in the `expose` block, replace that key accordingly.
-- The launcher reads the token from `/oscar/config/function_config.yaml` by default. You can override that path with `OSCAR_SERVICE_FDL_PATH`.
-- If the launcher cannot read a token from the OSCAR FDL, it falls back to `TERMINAL_TOKEN` if that environment variable is already present.
-- If neither the OSCAR service token nor `TERMINAL_TOKEN` is available, the application-side authentication is disabled and the terminal becomes publicly accessible.
-- The generated `oscar-cli` config is written to `~/.config/oscar/config.yaml` inside the container and uses mode `0600`.
+- The application does not authenticate direct traffic to its HTTP port. Do not expose that port via NodePort or an unauthenticated route, and restrict direct pod/Service access with network policy where the cluster permits it.
+- The generated `oscar-cli` config is written to `~/.oscar-cli/config.yaml` inside the container and uses mode `0600`.
 - If you mount `/mnt`, the workspace can persist independently from the in-container credentials. Review whether you want the generated CLI config to persist together with that workspace.
