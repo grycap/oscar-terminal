@@ -3,9 +3,9 @@ FROM golang:1.25-bookworm AS oscar-cli-builder
 ARG TARGETPLATFORM
 ARG BUILDPLATFORM
 
-ARG OSCAR_CLI_VERSION=v1.13.0
+ARG OSCAR_CLI_VERSION=v2.1.0
 
-RUN GOBIN=/tmp/bin go install github.com/grycap/oscar-cli@${OSCAR_CLI_VERSION}
+RUN GOBIN=/tmp/bin go install github.com/grycap/oscar-cli/v2@${OSCAR_CLI_VERSION}
 
 FROM node:22-bookworm-slim
 
